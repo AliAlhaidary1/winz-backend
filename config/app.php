@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\ServiceProvider;
+
 return [
 
     /*
@@ -86,7 +88,11 @@ return [
     |
     */
 
-    'providers' => [],
+    'providers' => ServiceProvider::defaultProviders()
+        ->merge([
+            App\Providers\AppServiceProvider::class,
+        ])
+        ->toArray(),
 
     /*
     |--------------------------------------------------------------------------

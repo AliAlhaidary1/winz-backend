@@ -2,9 +2,10 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "8100:8000"
     volumes:
       - .:/var/www/html
+      - vendor:/var/www/html/vendor
     depends_on:
       db:
         condition: service_healthy
@@ -31,7 +32,7 @@ services:
   phpmyadmin:
     image: phpmyadmin:5
     ports:
-      - "8080:80"
+      - "8099:80"
     environment:
       PMA_HOST: db
     depends_on:
@@ -39,3 +40,4 @@ services:
 
 volumes:
   dbdata:
+  vendor:
