@@ -8,6 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libicu-dev \
         libzip-dev \
         libpng-dev \
+        libjpeg62-turbo-dev \
+        libfreetype6-dev \
+        libonig-dev \
+        libxml2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # PHP extensions.
