@@ -133,13 +133,33 @@ class ApiController extends Controller
                         }
 
                         $columns = array_flip(Schema::getColumnListing($table));
+                        // ConvertEmptyStringsToNull rewrites "" to null even
+                        // inside the nested backup payload. Restore "" for
+                        // NOT NULL columns so rows such as an empty
+                        // app_config.ticket_footer can be inserted again.
+                        $notNull = [];
+                        foreach (DB::select(
+                            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+                            . "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? "
+                            . "AND IS_NULLABLE = 'NO'",
+                            [$table],
+                        ) as $column) {
+                            $notNull[$column->COLUMN_NAME] = true;
+                        }
                         foreach (array_chunk($rows, 500) as $chunk) {
                             $clean = [];
                             foreach ($chunk as $row) {
                                 if (! is_array($row)) {
                                     continue;
                                 }
-                                $clean[] = array_intersect_key($row, $columns);
+                                $cleanRow = array_intersect_key($row, $columns);
+                                foreach ($notNull as $columnName => $_) {
+                                    if (array_key_exists($columnName, $cleanRow)
+                                        && $cleanRow[$columnName] === null) {
+                                        $cleanRow[$columnName] = '';
+                                    }
+                                }
+                                $clean[] = $cleanRow;
                             }
                             if ($clean !== []) {
                                 DB::table($table)->insert($clean);
@@ -173,7 +193,20 @@ class ApiController extends Controller
         foreach ($reflection->getParameters() as $parameter) {
             $name = $parameter->getName();
             if (array_key_exists($name, $args)) {
-                $callArgs[$name] = $args[$name];
+                $value = $args[$name];
+                // Laravel's global ConvertEmptyStringsToNull middleware turns a
+                // JSON "" into null before this controller runs. Restore the
+                // empty string for non-nullable string parameters so legitimate
+                // empty config values (e.g. ticket_footer) can be saved, while
+                // nullable parameters keep their explicit null.
+                $type = $parameter->getType();
+                if ($value === null
+                    && $type instanceof \ReflectionNamedType
+                    && $type->getName() === 'string'
+                    && ! $type->allowsNull()) {
+                    $value = '';
+                }
+                $callArgs[$name] = $value;
             } elseif (! $parameter->isOptional()) {
                 throw new \InvalidArgumentException("Missing required argument: {$name}");
             }

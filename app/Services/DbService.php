@@ -1027,16 +1027,42 @@ class DbService
                     $drawTime = TimezoneService::epochForWallTime($date, $drawHm[0], $drawHm[1], $tz);
                     $salesOpen = TimezoneService::epochForWallTime($date, 0, 0, $tz);
                     $id = $dateStr . '-' . $type;
-                    DB::table('draw_periods')->insertOrIgnore([
-                        'id' => $id,
-                        'drawType' => $type,
-                        'drawDate' => $dateStr,
-                        'salesOpenTime' => $salesOpen,
-                        'salesCloseTime' => $salesClose,
-                        'drawTime' => $drawTime,
-                        'status' => 'SCHEDULED',
-                        'timezone' => $tz,
-                    ]);
+                    $existing = DB::table('draw_periods')->where('id', $id)->first();
+                    if ($existing === null) {
+                        DB::table('draw_periods')->insertOrIgnore([
+                            'id' => $id,
+                            'drawType' => $type,
+                            'drawDate' => $dateStr,
+                            'salesOpenTime' => $salesOpen,
+                            'salesCloseTime' => $salesClose,
+                            'drawTime' => $drawTime,
+                            'status' => 'SCHEDULED',
+                            'timezone' => $tz,
+                        ]);
+                    } else {
+                        // Schedule config must take effect on periods that have not
+                        // been manually locked. insertOrIgnore alone left seeded
+                        // periods stuck on the old times after an admin changed
+                        // midday_sales_close / midday_draw_time / draw_timezone.
+                        $status = strtoupper((string) ($existing->status ?? ''));
+                        $locked = in_array($status, [
+                            'CANCELLED', 'POSTPONED', 'SUSPENDED',
+                            'RESULT_PUBLISHED', 'COMPLETED', 'DRAWING',
+                        ], true);
+                        foreach (['result', 'result3', 'result4'] as $resultKey) {
+                            if (trim((string) ($existing->{$resultKey} ?? '')) !== '') {
+                                $locked = true;
+                            }
+                        }
+                        if (! $locked) {
+                            DB::table('draw_periods')->where('id', $id)->update([
+                                'salesOpenTime' => $salesOpen,
+                                'salesCloseTime' => $salesClose,
+                                'drawTime' => $drawTime,
+                                'timezone' => $tz,
+                            ]);
+                        }
+                    }
                 }
             }
             $this->refreshPeriodStatuses();
