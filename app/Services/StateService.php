@@ -1374,9 +1374,11 @@ class StateService
             return $this->replayResult($added, $skipped, $trimmed);
         }
 
-        // AUTO: keep the source draw type, move to its next sellable period.
+        // AUTO ("The same"): keep each line's ORIGINAL period type, only move
+        // it to the next sellable period of that same type. This preserves a
+        // mixed ticket exactly (some numbers Midday, some Evening, some both)
+        // without forcing every number into one draw or duplicating lines.
         $added = 0;
-        $autoSeen = [];
         foreach ($source as $l) {
             $numbers = $this->digitsFromString((string) $l['numbers']);
             $inferred = $this->normalizeDrawType($l['drawType'] ?? null);
@@ -1395,11 +1397,6 @@ class StateService
                 $inferred = 'MIDDAY';
             }
             $target = $this->resolveNextSellablePeriod($inferred);
-            $dedupeKey = $target['id'] . '|' . $this->replayPlayKey($l);
-            if (isset($autoSeen[$dedupeKey])) {
-                continue;
-            }
-            $autoSeen[$dedupeKey] = true;
             if ($this->tryAddOne($target, (string) $l['gameId'], (string) $l['gameName'], $numbers,
                 (string) $l['betType'], (float) $l['amount'], (int) ($l['isQuickPick'] ?? 0) === 1, $skipped, $trimmed)) {
                 $added++;
