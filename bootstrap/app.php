@@ -10,7 +10,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        $middleware->alias([
+            'api.token' => \App\Http\Middleware\VerifyApiToken::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

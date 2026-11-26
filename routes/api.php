@@ -9,6 +9,6 @@ Route::get('/health', function () {
     return response()->json(['ok' => true, 'result' => ['status' => 'ok']]);
 });
 
-Route::post('/call', [ApiController::class, 'call']);
+Route::post('/call', [ApiController::class, 'call'])->middleware('api.token');
 
-Route::post('/restore', [ApiController::class, 'restore']);
+Route::post('/restore', [ApiController::class, 'restore'])->middleware('api.token');

@@ -66,6 +66,8 @@ return [
 
     'key' => env('APP_KEY'),
 
+    'api_token' => env('WINZ_API_TOKEN'),
+
     'cipher' => 'AES-256-CBC',
 
     /*
