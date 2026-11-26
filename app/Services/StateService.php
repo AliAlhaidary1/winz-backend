@@ -200,6 +200,54 @@ class StateService
         return true;
     }
 
+    /**
+     * Let the signed-in user change their own username and password.
+     * Requires the current password and a unique new username.
+     */
+    public function changeCredentials(
+        string $currentPassword,
+        string $newUsername,
+        string $newPassword,
+    ): array {
+        $this->ensureLoggedIn();
+        $this->ensureNotExpired();
+
+        $id = (string) ($this->_currentUser['id'] ?? '');
+        $account = null;
+        foreach ($this->db->getAccounts() as $a) {
+            if ((string) ($a['id'] ?? '') === $id) {
+                $account = $a;
+                break;
+            }
+        }
+        if ($account === null) {
+            self::fail('Account not found');
+        }
+        if ((string) ($account['password'] ?? '') !== $currentPassword) {
+            self::fail('Current password is incorrect');
+        }
+
+        $newUsername = trim($newUsername);
+        if ($newUsername === '') {
+            self::fail('New username is required');
+        }
+        if ($newPassword === '') {
+            self::fail('New password is required');
+        }
+        foreach ($this->db->getAccounts() as $a) {
+            if ((string) ($a['id'] ?? '') !== $id
+                && (string) ($a['username'] ?? '') === $newUsername) {
+                self::fail('Username already taken');
+            }
+        }
+
+        $this->db->updateAccountCredentials($id, $newUsername, $newPassword);
+        $this->_currentUser['username'] = $newUsername;
+        $this->_currentUser['password'] = $newPassword;
+
+        return $this->snapshot();
+    }
+
     public function logout(): bool
     {
         $this->_currentUser = null;

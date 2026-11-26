@@ -135,6 +135,22 @@ Check 'tickets report' ([bool]($tickets.Count -ge 2)) "$($tickets.Count)"
 $close = Api 'state' 'closeCashSession' (Merge $adminEnv @{})
 Check 'close session' ($close.ok -eq $true) ($close.error)
 
+Write-Host '== CHANGE CREDENTIALS =='
+$wLogin = Api 'state' 'login' @{ username='worker1'; password='worker123' }
+$wu = $wLogin.result.state.user
+$wuJson = $wu | ConvertTo-Json -Depth 8 -Compress
+$loginAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$credBody = '{"scope":"state","method":"changeCredentials","args":{"user":{"id":"acc_worker1","username":"worker1","password":"worker123","role":"worker","status":"active","createdAt":1,"commission":5},"loginAt":' + $loginAt + ',"customer":{"id":"cust_default","name":"Cash Customer"},"cart":[],"openingCash":0,"currentPassword":"worker123","newUsername":"worker1tmp","newPassword":"tmp123"}}'
+$chg = Invoke-RestMethod "$base/call" -Headers @{ 'X-API-Key' = $token } -ContentType 'application/json' -Method Post -Body $credBody
+Check 'change credentials' ($chg.ok -eq $true) ($chg.error)
+$newLogin = Api 'state' 'login' @{ username='worker1tmp'; password='tmp123' }
+Check 'login with new credentials' ($newLogin.result.value -eq $true)
+$wu2 = $newLogin.result.state.user
+$wu2Json = $wu2 | ConvertTo-Json -Depth 8 -Compress
+$revertBody = '{"scope":"state","method":"changeCredentials","args":{"user":{"id":"acc_worker1","username":"worker1tmp","password":"tmp123","role":"worker","status":"active","createdAt":1,"commission":5},"loginAt":' + $loginAt + ',"customer":{"id":"cust_default","name":"Cash Customer"},"cart":[],"openingCash":0,"currentPassword":"tmp123","newUsername":"worker1","newPassword":"worker123"}}'
+$revert = Invoke-RestMethod "$base/call" -Headers @{ 'X-API-Key' = $token } -ContentType 'application/json' -Method Post -Body $revertBody
+Check 'revert credentials' ($revert.ok -eq $true) ($revert.error)
+
 Write-Host '== BACKUP / RESTORE =='
 $snap = Invoke-RestMethod -Uri "$base/call" -Method Post -ContentType 'application/json' -Headers @{ 'X-API-Key'=$token } -Body '{"scope":"db","method":"getTickets","args":{}}'
 Check 'backup data readable' (@($snap.result).Count -ge 2)

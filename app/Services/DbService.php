@@ -88,6 +88,14 @@ class DbService
         DB::table('accounts')->where('id', $id)->update(['commission' => $commission]);
     }
 
+    public function updateAccountCredentials(string $id, string $username, string $password): void
+    {
+        DB::table('accounts')->where('id', $id)->update([
+            'username' => $username,
+            'password' => $password,
+        ]);
+    }
+
     public function deactivateAccount(string $id): void
     {
         DB::table('accounts')->where('id', $id)->update(['status' => 'inactive']);
