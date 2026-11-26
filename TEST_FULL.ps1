@@ -1,5 +1,6 @@
+param([string]$Base = 'https://winz.sreamart.com/api')
 $ErrorActionPreference = 'Stop'
-$base = 'http://127.0.0.1:8100/api'
+$base = $Base
 $token = 'WinzSecure2026!'
 $script:pass = 0
 $script:fail = 0
