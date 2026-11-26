@@ -160,7 +160,9 @@ class StateService
 
     public function isAdmin(): bool
     {
-        return ($this->_currentUser['role'] ?? null) === 'admin';
+        $role = (string) ($this->_currentUser['role'] ?? 'cashier');
+
+        return in_array($role, ['manager', 'owner'], true);
     }
 
     public function cart(): array

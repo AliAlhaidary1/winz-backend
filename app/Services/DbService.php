@@ -78,9 +78,46 @@ class DbService
         return $row === null ? null : (array) $row;
     }
 
+    public function getAccountById(string $id): ?array
+    {
+        $row = DB::table('accounts')->where('id', $id)->first();
+
+        return $row === null ? null : (array) $row;
+    }
+
     public function insertAccount(array $a): void
     {
         DB::table('accounts')->insert($a);
+    }
+
+    public function createSession(string $token, string $accountId): void
+    {
+        $now = self::nowMs();
+        DB::table('winz_sessions')->insert([
+            'token' => $token,
+            'account_id' => $accountId,
+            'created_at' => $now,
+            'expires_at' => $now + 8 * 60 * 60 * 1000,
+        ]);
+    }
+
+    public function userForSession(string $token): ?array
+    {
+        $session = DB::table('winz_sessions')->where('token', $token)->first();
+        if ($session === null || (int) $session->expires_at < self::nowMs()) {
+            return null;
+        }
+        $row = DB::table('accounts')->where('id', $session->account_id)->first();
+        if ($row === null || ($row->status ?? null) !== 'active') {
+            return null;
+        }
+
+        return (array) $row;
+    }
+
+    public function deleteSession(string $token): void
+    {
+        DB::table('winz_sessions')->where('token', $token)->delete();
     }
 
     public function updateAccountCommission(string $id, float $commission): void
@@ -1102,26 +1139,30 @@ class DbService
             'createdAt' => $now,
         ]);
 
-        // Role migration: only admin and worker.
+        // Four-level role model: cashier < supervisor < manager < owner.
         try {
-            DB::table('accounts')->whereIn('role', ['agent', 'cashier'])->update(['role' => 'worker']);
+            DB::table('accounts')->whereIn('role', ['agent', 'cashier', 'worker'])->update(['role' => 'cashier']);
+            DB::table('accounts')->where('role', 'admin')->update(['role' => 'owner']);
         } catch (QueryException $e) {
         }
-        $this->ensureAccount('acc_admin', 'admin', 'admin123', 'admin', 0, $now);
-        $this->ensureAccount('acc_worker1', 'worker1', 'worker123', 'worker', 5.0, $now);
+        $this->ensureAccount('acc_admin', 'admin', 'admin123', 'owner', 0, $now);
+        $this->ensureAccount('acc_manager', 'manager', 'manager123', 'manager', 0, $now);
+        $this->ensureAccount('acc_supervisor', 'supervisor', 'supervisor123', 'supervisor', 5.0, $now);
+        $this->ensureAccount('acc_worker1', 'worker1', 'worker123', 'cashier', 5.0, $now);
         DB::table('accounts')->where('username', 'admin')->update([
-            'password' => 'admin123', 'status' => 'active', 'role' => 'admin',
+            'password' => 'admin123', 'status' => 'active', 'role' => 'owner',
+        ]);
+        DB::table('accounts')->where('username', 'manager')->update([
+            'password' => 'manager123', 'status' => 'active', 'role' => 'manager',
+        ]);
+        DB::table('accounts')->where('username', 'supervisor')->update([
+            'password' => 'supervisor123', 'status' => 'active', 'role' => 'supervisor',
         ]);
         DB::table('accounts')->where('username', 'worker1')->update([
-            'password' => 'worker123', 'status' => 'active', 'role' => 'worker',
+            'password' => 'worker123', 'status' => 'active', 'role' => 'cashier',
         ]);
-        DB::table('accounts')->where('username', 'agent1')->update([
-            'role' => 'worker',
-            'commission' => DB::raw('COALESCE(commission, 5.0)'),
-        ]);
-        DB::table('accounts')->where('username', 'cashier')->update(['role' => 'worker']);
-        DB::table('accounts')->where('role', 'worker')->whereNull('commission')->update(['commission' => 5.0]);
-        DB::table('accounts')->where('role', 'worker')->where('commission', 0)->update(['commission' => 5.0]);
+        DB::table('accounts')->where('role', 'cashier')->whereNull('commission')->update(['commission' => 5.0]);
+        DB::table('accounts')->where('role', 'cashier')->where('commission', 0)->update(['commission' => 5.0]);
 
         // Games.
         if (DB::table('games')->count() === 0) {

@@ -5,11 +5,14 @@ $token = 'WinzSecure2026!'
 $script:pass = 0
 $script:fail = 0
 
+$script:sessionToken = ''
 function Api([string]$Scope, [string]$Method, [hashtable]$P = @{}, [hashtable]$Extra = @{}) {
   $body = @{ scope = $Scope; method = $Method; args = $P } + $Extra
+  $headers = @{ 'X-API-Key' = $token }
+  if ($script:sessionToken) { $headers['X-Session-Token'] = $script:sessionToken }
   try {
     Invoke-RestMethod -Uri "$base/call" -Method Post -ContentType 'application/json' `
-      -Headers @{ 'X-API-Key' = $token } -Body ($body | ConvertTo-Json -Depth 15 -Compress)
+      -Headers $headers -Body ($body | ConvertTo-Json -Depth 15 -Compress)
   } catch {
     $raw = $_.ErrorDetails.Message
     if (-not $raw -and $_.Exception.Response) {
@@ -39,17 +42,22 @@ function Merge([hashtable]$Base, [hashtable]$Over) {
 Write-Host '== AUTH & ROLES =='
 $adminLogin = Api 'state' 'login' @{ username='admin'; password='admin123' }
 $admin = $adminLogin.result.state.user
-Check 'admin login + role' ($null -ne $admin -and $admin.role -eq 'admin')
+$script:sessionToken = $adminLogin.result.token
+Check 'admin login + owner role' ($null -ne $admin -and $admin.role -eq 'owner')
+Check 'session token issued' ($script:sessionToken -and $script:sessionToken.Length -gt 20)
 Check 'bad password rejected' ((Api 'state' 'login' @{ username='admin'; password='wrong' }).result.value -eq $false -or $true)
-$workerCreated = Api 'db' 'insertAccount' @{ a=@{ id='acc_test_worker'; username='testworker'; password='test123'; role='worker'; status='active'; createdAt=1; commission=7.5 } }
+$workerCreated = Api 'db' 'insertAccount' @{ a=@{ id='acc_test_worker'; username='testworker'; password='test123'; role='cashier'; status='active'; createdAt=1; commission=7.5 } }
 $workerLogin = Api 'state' 'login' @{ username='testworker'; password='test123' }
 $worker = $workerLogin.result.state.user
-Check 'worker login + role' ($null -ne $worker -and $worker.role -eq 'worker') ($workerLogin.error)
-Check 'worker not admin' ($worker.role -ne 'admin')
+Check 'cashier login + role' ($null -ne $worker -and $worker.role -eq 'cashier') "role=$($worker.role) err=$($workerLogin.error)"
+Check 'cashier not manager' ($worker.role -ne 'manager')
 $adminEnv = Env $admin
 $workerEnv = Env $worker
+$savedToken = $script:sessionToken
+$script:sessionToken = $workerLogin.result.token
 $workerResult = Api 'state' 'processPeriodResult' (Merge $workerEnv @{ periodId='x'; winningNumbers=@('1','2','3') })
-Check 'worker cannot publish result' ($workerResult.ok -eq $false) ($workerResult.error)
+$script:sessionToken = $savedToken
+Check 'cashier cannot publish result' ($workerResult.ok -eq $false) ($workerResult.error)
 
 Write-Host '== AUTH TOKEN =='
 try {
@@ -140,23 +148,23 @@ $wLogin = Api 'state' 'login' @{ username='worker1'; password='worker123' }
 $wu = $wLogin.result.state.user
 $wuJson = $wu | ConvertTo-Json -Depth 8 -Compress
 $loginAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-$credBody = '{"scope":"state","method":"changeCredentials","args":{"user":{"id":"acc_worker1","username":"worker1","password":"worker123","role":"worker","status":"active","createdAt":1,"commission":5},"loginAt":' + $loginAt + ',"customer":{"id":"cust_default","name":"Cash Customer"},"cart":[],"openingCash":0,"currentPassword":"worker123","newUsername":"worker1tmp","newPassword":"tmp123"}}'
-$chg = Invoke-RestMethod "$base/call" -Headers @{ 'X-API-Key' = $token } -ContentType 'application/json' -Method Post -Body $credBody
+$credBody = '{"scope":"state","method":"changeCredentials","args":{"user":{"id":"acc_admin","username":"admin","password":"admin123","role":"owner","status":"active","createdAt":1,"commission":0},"loginAt":' + $loginAt + ',"customer":{"id":"cust_default","name":"Cash Customer"},"cart":[],"openingCash":0,"currentPassword":"admin123","newUsername":"admintmp","newPassword":"tmp123"}}'
+$chg = Invoke-RestMethod "$base/call" -Headers @{ 'X-API-Key' = $token; 'X-Session-Token' = $script:sessionToken } -ContentType 'application/json' -Method Post -Body $credBody
 Check 'change credentials' ($chg.ok -eq $true) ($chg.error)
-$newLogin = Api 'state' 'login' @{ username='worker1tmp'; password='tmp123' }
+$newLogin = Api 'state' 'login' @{ username='admintmp'; password='tmp123' }
 Check 'login with new credentials' ($newLogin.result.value -eq $true)
 $wu2 = $newLogin.result.state.user
 $wu2Json = $wu2 | ConvertTo-Json -Depth 8 -Compress
-$revertBody = '{"scope":"state","method":"changeCredentials","args":{"user":{"id":"acc_worker1","username":"worker1tmp","password":"tmp123","role":"worker","status":"active","createdAt":1,"commission":5},"loginAt":' + $loginAt + ',"customer":{"id":"cust_default","name":"Cash Customer"},"cart":[],"openingCash":0,"currentPassword":"tmp123","newUsername":"worker1","newPassword":"worker123"}}'
-$revert = Invoke-RestMethod "$base/call" -Headers @{ 'X-API-Key' = $token } -ContentType 'application/json' -Method Post -Body $revertBody
+$revertBody = '{"scope":"state","method":"changeCredentials","args":{"user":{"id":"acc_admin","username":"admintmp","password":"tmp123","role":"owner","status":"active","createdAt":1,"commission":0},"loginAt":' + $loginAt + ',"customer":{"id":"cust_default","name":"Cash Customer"},"cart":[],"openingCash":0,"currentPassword":"tmp123","newUsername":"admin","newPassword":"admin123"}}'
+$revert = Invoke-RestMethod "$base/call" -Headers @{ 'X-API-Key' = $token; 'X-Session-Token' = $script:sessionToken } -ContentType 'application/json' -Method Post -Body $revertBody
 Check 'revert credentials' ($revert.ok -eq $true) ($revert.error)
 
 Write-Host '== BACKUP / RESTORE =='
-$snap = Invoke-RestMethod -Uri "$base/call" -Method Post -ContentType 'application/json' -Headers @{ 'X-API-Key'=$token } -Body '{"scope":"db","method":"getTickets","args":{}}'
+$snap = Invoke-RestMethod -Uri "$base/call" -Method Post -ContentType 'application/json' -Headers @{ 'X-API-Key'=$token; 'X-Session-Token'=$script:sessionToken } -Body '{"scope":"db","method":"getTickets","args":{}}'
 Check 'backup data readable' (@($snap.result).Count -ge 2)
 $restoreBody = @{ backup=@{ tickets=@() } } | ConvertTo-Json -Depth 10 -Compress
 try {
-  Invoke-RestMethod -Uri "$base/restore" -Method Post -ContentType 'application/json' -Headers @{ 'X-API-Key'=$token } -Body $restoreBody | Out-Null
+  Invoke-RestMethod -Uri "$base/restore" -Method Post -ContentType 'application/json' -Headers @{ 'X-API-Key'=$token; 'X-Session-Token'=$script:sessionToken } -Body $restoreBody | Out-Null
   Check 'restore rejects incomplete payload' $false
 } catch { Check 'restore rejects incomplete payload' ($_.Exception.Response.StatusCode.value__ -eq 400) }
 

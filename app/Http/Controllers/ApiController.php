@@ -64,6 +64,30 @@ class ApiController extends Controller
                 throw new \InvalidArgumentException('scope must be "db" or "state"');
             }
 
+            // Resolve the caller from the server-side session. The client-sent
+            // `user` envelope is no longer trusted for identity or role.
+            $isLogin = $scope === 'state' && $method === 'login';
+            $sessionToken = (string) $request->header('X-Session-Token', '');
+            $user = $sessionToken !== ''
+                ? $this->dbService->userForSession($sessionToken)
+                : null;
+
+            if (! $isLogin) {
+                if ($user === null) {
+                    return response()->json([
+                        'ok' => false,
+                        'error' => 'SESSION_REQUIRED',
+                    ], 401);
+                }
+                $args['user'] = $user;
+                if (! $this->isAllowed($user, $scope, $method, $args)) {
+                    return response()->json([
+                        'ok' => false,
+                        'error' => 'FORBIDDEN',
+                    ], 403);
+                }
+            }
+
             $service = $scope === 'db' ? $this->dbService : $this->stateService;
 
             if (! method_exists($service, $method) || ! is_callable([$service, $method])) {
@@ -85,6 +109,18 @@ class ApiController extends Controller
                 }
             }
 
+            if ($isLogin && ($result['value'] ?? false) === true) {
+                $newToken = bin2hex(random_bytes(32));
+                $account = $result['state']['user'] ?? null;
+                if (is_array($account) && isset($account['id'])) {
+                    $this->dbService->createSession($newToken, (string) $account['id']);
+                    $result['token'] = $newToken;
+                }
+            }
+            if ($scope === 'state' && $method === 'logout' && $sessionToken !== '') {
+                $this->dbService->deleteSession($sessionToken);
+            }
+
             return response()->json(['ok' => true, 'result' => $result]);
         } catch (Throwable $e) {
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 400);
@@ -98,6 +134,17 @@ class ApiController extends Controller
     public function restore(Request $request): JsonResponse
     {
         try {
+            $sessionToken = (string) $request->header('X-Session-Token', '');
+            $user = $sessionToken !== ''
+                ? $this->dbService->userForSession($sessionToken)
+                : null;
+            if ($user === null) {
+                return response()->json(['ok' => false, 'error' => 'SESSION_REQUIRED'], 401);
+            }
+            if ((self::ROLE_LEVEL[$user['role'] ?? 'cashier'] ?? 1) < 3) {
+                return response()->json(['ok' => false, 'error' => 'FORBIDDEN'], 403);
+            }
+
             $backup = $request->input('backup');
             if ($backup === null && is_array($request->input('args'))) {
                 $backup = $request->input('args.backup');
@@ -175,6 +222,98 @@ class ApiController extends Controller
         } catch (Throwable $e) {
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 400);
         }
+    }
+
+    private const ROLE_LEVEL = [
+        'cashier' => 1,
+        'supervisor' => 2,
+        'manager' => 3,
+        'owner' => 4,
+    ];
+
+    /** Minimum role level required for each operation (default: 1 = cashier). */
+    private function requiredLevel(string $scope, string $method): int
+    {
+        $state = [
+            'processPeriodResult' => 3,
+            'processDrawResult' => 3,
+            'payWinningTicket' => 2,
+            'reversePayout' => 2,
+            'cancelWholeTicket' => 2,
+            'cancelTicketLine' => 2,
+            'openCashSession' => 2,
+            'closeCashSession' => 2,
+            'loadOpeningCash' => 2,
+            'computeCashBalance' => 2,
+            'computeGeneralBalance' => 2,
+            'computeCashBalanceGlobal' => 2,
+            'computeGeneralBalanceGlobal' => 2,
+            'addCustomer' => 2,
+            'updateCustomer' => 2,
+            'deleteCustomer' => 2,
+            'saveCartAsCustomerPlays' => 2,
+            'playCustomerUsual' => 2,
+        ];
+        $db = [
+            'upsertConfig' => 3,
+            'setClientCommissionRate' => 3,
+            'insertAccount' => 3,
+            'updateAccountCommission' => 3,
+            'deactivateAccount' => 3,
+            'insertPeriod' => 3,
+            'updatePeriodStatus' => 3,
+            'updatePeriodTimes' => 3,
+            'publishPeriodResult' => 3,
+            'publishPeriodResult3' => 3,
+            'publishPeriodResult4' => 3,
+            'clearPeriodResult3' => 3,
+            'clearPeriodResult4' => 3,
+            'resetPeriodTickets' => 3,
+            'resetDrawTickets' => 3,
+            'updateDrawResult' => 3,
+            'insertAuditLog' => 2,
+            'insertCustomer' => 2,
+            'updateCustomer' => 2,
+            'deleteCustomer' => 2,
+            'insertCashLedger' => 2,
+            'insertBalanceMovement' => 2,
+            'insertCashSession' => 2,
+            'closeCashSession' => 2,
+            'insertPayoutLedger' => 2,
+            'releasePayoutLockForTicket' => 2,
+            'voidTicketLine' => 2,
+            'recalcTicketTotals' => 2,
+            'reassignCustomerTickets' => 2,
+        ];
+
+        return $scope === 'state'
+            ? ($state[$method] ?? 1)
+            : ($db[$method] ?? 1);
+    }
+
+    private function isAllowed(array $user, string $scope, string $method, array $args): bool
+    {
+        $role = (string) ($user['role'] ?? 'cashier');
+        $level = self::ROLE_LEVEL[$role] ?? 1;
+        if ($level < $this->requiredLevel($scope, $method)) {
+            return false;
+        }
+
+        // Nobody may deactivate themselves; only owner may deactivate another owner.
+        if ($scope === 'db' && $method === 'deactivateAccount') {
+            $targetId = (string) ($args['id'] ?? '');
+            if ($targetId === (string) ($user['id'] ?? '')) {
+                return false;
+            }
+            $target = $this->dbService->getAccountById($targetId);
+            if ($target !== null
+                && ($target['role'] ?? '') === 'owner'
+                && $role !== 'owner') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
