@@ -1,4 +1,4 @@
-# خطوات النشر على VPS موجود — winz.sreamart.com
+﻿# خطوات النشر على VPS موجود — winz.sreamart.com
 
 البيانات:
 - النطاق: `winz.sreamart.com` (Cloudflare Proxied)
@@ -74,8 +74,8 @@ php -r "echo 'base64:'.base64_encode(random_bytes(32)).PHP_EOL;"
 ## ٤) بناء وتشغيل الحاويات (باسم مشروع مستقل)
 ```bash
 cd /srv/winz-api
-docker compose -p winz-api -f deploy/docker-compose.prod.yml up -d --build
-docker compose -p winz-api -f deploy/docker-compose.prod.yml ps
+docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml up -d --build
+docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml ps
 ```
 > `-p winz-api` يمنع تضارب الأسماء مع مشاريعك الأخرى.
 
@@ -83,8 +83,8 @@ docker compose -p winz-api -f deploy/docker-compose.prod.yml ps
 
 ## ٥) تثبيت الجداول والبيانات الأولية
 ```bash
-docker compose -p winz-api -f deploy/docker-compose.prod.yml exec -T app php artisan migrate --seed --force
-docker compose -p winz-api -f deploy/docker-compose.prod.yml exec -T app php artisan config:clear
+docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml exec -T app php artisan migrate --seed --force
+docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml exec -T app php artisan config:clear
 ```
 
 ---
@@ -133,13 +133,13 @@ https://winz.sreamart.com/api/health
 ## ٩) تغيير كلمة مرور قاعدة البيانات لاحقاً (إن احتجت)
 ```bash
 # أدخل كلمة root الحالية من .env
-docker compose -p winz-api -f deploy/docker-compose.prod.yml exec -T db \
+docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml exec -T db \
   mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e \
   "ALTER USER 'winz'@'%' IDENTIFIED BY 'كلمة_جديدة'; FLUSH PRIVILEGES;"
 ```
 ثم عدّل `DB_PASSWORD` و`MYSQL_PASSWORD` في `.env` وأعد التشغيل:
 ```bash
-docker compose -p winz-api -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml up -d
 ```
 
 ---
@@ -147,14 +147,14 @@ docker compose -p winz-api -f deploy/docker-compose.prod.yml up -d
 ## ١٠) النسخ الاحتياطي والتحديث
 ```bash
 # نسخة يومية (cron)
-0 3 * * * cd /srv/winz-api && docker compose -p winz-api -f deploy/docker-compose.prod.yml exec -T db \
+0 3 * * * cd /srv/winz-api && docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml exec -T db \
   mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" winz | gzip > /root/backups/winz-\$(date +\%F).sql.gz
 
 # تحديث لاحق
 cd /srv/winz-api
 git pull
-docker compose -p winz-api -f deploy/docker-compose.prod.yml up -d --build
-docker compose -p winz-api -f deploy/docker-compose.prod.yml exec -T app php artisan migrate --force
+docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml up -d --build
+docker compose --env-file .env -p winz-api -f deploy/docker-compose.prod.yml exec -T app php artisan migrate --force
 ```
 
 ---
@@ -177,3 +177,4 @@ curl https://winz.sreamart.com/api/health
 وسأعدّل `lib/src/config/api_config.dart` إلى:
 `static const String baseUrl = 'https://winz.sreamart.com/api';`
 ومعها سأجري الاختبار الكامل معك.
+

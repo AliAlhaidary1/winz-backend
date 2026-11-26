@@ -1,4 +1,4 @@
-# نشر Winz Backend على VPS مع Docker
+﻿# نشر Winz Backend على VPS مع Docker
 
 > هذه تعليمات فقط؛ لم يتم تنفيذ أي نشر. كل الملفات تحت `winz-api/deploy/`.
 
@@ -40,9 +40,9 @@ nano ../.env
 ولّد مفتاح التطبيق:
 ```bash
 cd ~/winz-api
-docker compose -f deploy/docker-compose.prod.yml up -d --build
-docker compose -f deploy/docker-compose.prod.yml exec -T app php artisan key:generate
-docker compose -f deploy/docker-compose.prod.yml exec -T app php artisan migrate --seed --force
+docker compose --env-file .env -f deploy/docker-compose.prod.yml up -d --build
+docker compose --env-file .env -f deploy/docker-compose.prod.yml exec -T app php artisan key:generate
+docker compose --env-file .env -f deploy/docker-compose.prod.yml exec -T app php artisan migrate --seed --force
 ```
 
 > ملاحظة: `key:generate` يعدّل `.env` داخل الحاوية/المجلد المشترك؛ تأكد أن `APP_KEY` أصبح غير فارغ في `.env` على المضيف.
@@ -71,16 +71,16 @@ https://YOUR-DOMAIN/api
 ## ٦) أوامر مفيدة
 ```bash
 cd ~/winz-api
-docker compose -f deploy/docker-compose.prod.yml ps
-docker compose -f deploy/docker-compose.prod.yml logs -f app
-docker compose -f deploy/docker-compose.prod.yml restart
-docker compose -f deploy/docker-compose.prod.yml --profile tools up -d phpmyadmin  # محلي فقط عبر SSH tunnel
+docker compose --env-file .env -f deploy/docker-compose.prod.yml ps
+docker compose --env-file .env -f deploy/docker-compose.prod.yml logs -f app
+docker compose --env-file .env -f deploy/docker-compose.prod.yml restart
+docker compose --env-file .env -f deploy/docker-compose.prod.yml --profile tools up -d phpmyadmin  # محلي فقط عبر SSH tunnel
 ```
 
 ## ٧) النسخ الاحتياطي (مهم)
 ```bash
 # cron مثال: كل يوم 03:00
-0 3 * * * cd ~/winz-api && docker compose -f deploy/docker-compose.prod.yml exec -T db \
+0 3 * * * cd ~/winz-api && docker compose --env-file .env -f deploy/docker-compose.prod.yml exec -T db \
   mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" winz | gzip > ~/backups/winz-$(date +\%F).sql.gz
 ```
 احتفظ بنسخة من `.env` و`APP_KEY` وvolume `dbdata`.
@@ -89,8 +89,8 @@ docker compose -f deploy/docker-compose.prod.yml --profile tools up -d phpmyadmi
 ```bash
 cd ~/winz-api
 git pull
-docker compose -f deploy/docker-compose.prod.yml up -d --build
-docker compose -f deploy/docker-compose.prod.yml exec -T app php artisan migrate --force
+docker compose --env-file .env -f deploy/docker-compose.prod.yml up -d --build
+docker compose --env-file .env -f deploy/docker-compose.prod.yml exec -T app php artisan migrate --force
 ```
 
 ## تحذير أمني مهم
@@ -99,3 +99,4 @@ docker compose -f deploy/docker-compose.prod.yml exec -T app php artisan migrate
 - أضف token مطلوب في الرأس (سأحتاج تعديل طفيف في التطبيق والخادم).
 
 لا تعرض phpMyAdmin على الإنترنت؛ استخدم SSH tunnel فقط.
+
