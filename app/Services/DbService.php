@@ -991,19 +991,16 @@ class DbService
             $cfg = [];
             foreach (DB::table('app_config')
                 ->whereIn('key', [
-                    'midday_sales_open', 'midday_sales_close', 'midday_draw_time',
-                    'evening_sales_open', 'evening_sales_close', 'evening_draw_time',
-                    'draw_timezone',
+                    'midday_sales_close', 'midday_draw_time',
+                    'evening_sales_close', 'evening_draw_time', 'draw_timezone',
                 ])->get() as $row) {
                 $cfg[$row->key] = (string) $row->value;
             }
             $tz = $cfg['draw_timezone'] ?? TimezoneService::DEFAULT_TIMEZONE;
             if ($drawType === 'MIDDAY') {
-                $openStr = $cfg['midday_sales_open'] ?? '00:00';
                 $closeStr = $cfg['midday_sales_close'] ?? '14:15';
                 $drawStr = $cfg['midday_draw_time'] ?? '14:30';
             } else {
-                $openStr = $cfg['evening_sales_open'] ?? '00:00';
                 $closeStr = $cfg['evening_sales_close'] ?? '22:20';
                 $drawStr = $cfg['evening_draw_time'] ?? '22:30';
             }

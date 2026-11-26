@@ -1446,15 +1446,7 @@ class StateService
             if ($inferred !== 'MIDDAY' && $inferred !== 'EVENING') {
                 $inferred = 'MIDDAY';
             }
-            try {
-                $target = $this->resolveNextSellablePeriod($inferred);
-            } catch (Throwable $e) {
-                // The original draw is closed (e.g. an old Midday ticket copied
-                // in the evening). Fall back to whichever draw is open now so
-                // "The same" still works instead of failing.
-                $other = $inferred === 'MIDDAY' ? 'EVENING' : 'MIDDAY';
-                $target = $this->resolveNextSellablePeriod($other);
-            }
+            $target = $this->resolveNextSellablePeriod($inferred);
             if ($this->tryAddOne($target, (string) $l['gameId'], (string) $l['gameName'], $numbers,
                 (string) $l['betType'], (float) $l['amount'], (int) ($l['isQuickPick'] ?? 0) === 1, $skipped, $trimmed)) {
                 $added++;
