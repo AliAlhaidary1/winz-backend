@@ -299,6 +299,20 @@ class ApiController extends Controller
             return false;
         }
 
+        // Role assignment rules. `owner` can never be created from the UI.
+        if ($scope === 'db' && $method === 'insertAccount') {
+            $newRole = (string) ($args['a']['role'] ?? 'cashier');
+            if ($newRole === 'owner') {
+                return false;
+            }
+            if ($newRole === 'manager' && $level < 4) {
+                return false;
+            }
+            if ($newRole === 'supervisor' && $level < 3) {
+                return false;
+            }
+        }
+
         // Nobody may deactivate themselves; only owner may deactivate another owner.
         if ($scope === 'db' && $method === 'deactivateAccount') {
             $targetId = (string) ($args['id'] ?? '');
